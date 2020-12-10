@@ -1,0 +1,133 @@
+---
+title: "Machine learning assignment"
+author: "Oleksii Yehorchenkov"
+date: "30 11 2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+This assignment is based on materials from Coursera course [Practical machine learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome)
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Data
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+## What you should do
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+Also you should explain how do you deal with NA's values and investigate correlation.
+
+You repository for this assignment should consist of R markdown file, compiled html file and prediction.csv file with data from pml-testing.csv and 'classe' column with predictions for 20 observation.
+
+Downloading the data
+```{R}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+
+train_Url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train_File <- "./data/pml-training.csv"
+test_File  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(train_File)) {
+  download.file(train_Url, destination_file=train_File, method="curl")
+}
+if (!file.exists(test_File)) {
+  download.file(test_Url, destination_file=test_File, method="curl")
+}
+
+```
+Reading the data
+
+```{R}
+train_Raw_df <- read.csv("./data/pml-training.csv")
+test_Raw_df <- read.csv("./data/pml-testing.csv")
+
+```
+Cleaning and slicing the data
+```{R}
+sum(complete.cases(train_Raw_df))
+
+train_Raw_df <- train_Raw_df[, colSums(is.na(train_Raw_df)) == 0] 
+test_Raw_df <- test_Raw_df[, colSums(is.na(test_Raw_df)) == 0] 
+classe <- train_Raw_df$classe
+train_Remove <- grepl("^X|timestamp|window", names(train_Raw_df))
+train_Raw_df <- train_Raw_df[, !train_Remove]
+train_Cleaned <- train_Raw_df[, sapply(train_Raw_df, is.numeric)]
+train_Cleaned$classe <- classe
+test_Remove <- grepl("^X|timestamp|window", names(test_Raw_df))
+test_Raw_df <- test_Raw_df[, !test_Remove]
+test_Cleaned <- test_Raw_df[, sapply(test_Raw_df, is.numeric)]
+set.seed(1908)
+inTrain <- createDataPartition(train_Cleaned$classe, p=0.65, list=F)
+train_Data <- train_Cleaned[inTrain, ]
+test_Data <- train_Cleaned[-inTrain, ]
+```
+
+Predicting with RF
+```{R}
+
+control_Rf <- trainControl(method="cv", 5)
+model_Rf <- train(classe ~ ., data=train_Data, method="rf", trControl=control_Rf, ntree=245)
+model_Rf
+predict_Rf <- predict(model_Rf, test_Data)
+confusionMatrix(table(test_Data$classe, predict_Rf))
+```
+
+writing to csv
+
+```{R}
+write.csv(predict_Rf, file = "prediction_RF.csv", row.names = F)
+```
+
+Predicting with GBM
+```{R}
+
+control_gbm <- trainControl(method="cv", 5)
+model_gbm <- train(classe ~ ., data=train_Data, method="gbm", trControl=control_gbm, verbose = FALSE)
+model_gbm
+predict_gbm <- predict(model_gbm, test_Data)
+confusionMatrix(table(test_Data$classe, predict_gbm))
+```
+Writing predictions to csv
+```{R}
+write.csv(predict_gbm, file = "prediction_GBM.csv", row.names = F)
+```
+
+Taking RF for further consideration because it has better accuracy compared to GBM.
+
+```{R}
+result <- predict(model_gbm, test_Cleaned[, -length(names(test_Cleaned))])
+result
+```
+
+Plotting
+
+```{R}
+treeModel <- rpart(classe ~ ., data=train_Data, method="class")
+prp(treeModel) # fast plot
+
+```
